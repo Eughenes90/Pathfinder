@@ -52,29 +52,47 @@ irrealisticamente lunghi:
 
 ## Struttura
 
-- `index.html` — homepage + tool (upload, calcolo, mappa, link Google Maps)
+- `index.html` — **landing page**: spiega cosa fa il tool e come funziona,
+  nessun upload né calcolo. È la pagina che si apre per prima su Vercel.
+- `app.html` — il tool vero e proprio (upload, calcolo, mappa, link Google
+  Maps). Ci si arriva dal pulsante "Apri il tool" sulla homepage.
 - `merge.html` — unisce più export CSV in un unico JSON/CSV senza duplicati,
-  tutto lato client
-- `api/config.js` — espone solo `GOOGLE_MAPS_BROWSER_KEY` (opzionale, solo
-  per la mappa con le strade nell'anteprima — vedi sotto)
+  tutto lato client.
+- `plugin.html` — pagina di download del plugin IITC (`downloads/export-uncaptured-portals.user.js`)
+  con istruzioni d'installazione passo per passo.
+- `downloads/export-uncaptured-portals.user.js` — lo script IITC stesso,
+  servito come file statico: legge i portali già caricati sulla mappa Intel,
+  tiene solo quelli non catturati, esporta un JSON nel formato che `app.html`
+  si aspetta in caricamento. Gira solo nel browser di chi lo installa, non
+  tocca questo backend.
+- `api/config.js` — espone solo `CARTO_API_KEY` (opzionale, solo per la
+  mappa con le strade nell'anteprima — vedi sotto).
 
-## La chiave Maps "browser" (facoltativa)
+Le quattro pagine sono collegate tra loro con una barra di navigazione in
+alto (Home / Tool / Plugin IITC / Unisci CSV), coerente su tutte.
 
-Serve solo per disegnare la mappa reale con le strade nel pannello
-dell'alternativa selezionata. Senza configurarla, l'app mostra comunque tutto
+## La chiave Carto (facoltativa)
+
+Serve solo per disegnare la mappa reale con le strade (tile "Dark Matter",
+coerenti con il tema scuro dell'app) nel pannello dell'alternativa
+selezionata, via Leaflet. Senza configurarla, l'app mostra comunque tutto
 correttamente — solo con una mappa schematica (punti e linee in scala,
-niente tile stradali) invece della mappa vera. Se la aggiungi: crea una
-chiave con **Maps JavaScript API** abilitata in Google Cloud Console, e
-restringila per **HTTP referrer** al tuo dominio Vercel — è una chiave
-pensata per essere pubblica, la sicurezza sta nella restrizione di dominio,
-non nel nasconderla.
+niente tile stradali) invece della mappa vera.
+
+Per ottenerla: vai su https://carto.com/basemaps/apikey/, nessun account né
+carta di credito richiesti, arriva subito via email. Gratuita fino a 5
+milioni di richieste di tile al mese per uso non commerciale (1 milione se
+commerciale) — un progetto personale come questo non si avvicina nemmeno a
+quella soglia. È una chiave pensata per stare nell'URL del tile lato
+browser, quindi pubblica per natura, esattamente come lo sarebbe stata una
+chiave Google Maps "browser".
 
 ## Deploy su Vercel
 
 1. Importa questa cartella su vercel.com/new (anche senza repo Git, si può
    trascinare la cartella).
 2. (Opzionale) **Project Settings → Environment Variables** →
-   `GOOGLE_MAPS_BROWSER_KEY` se vuoi la mappa con le strade.
+   `CARTO_API_KEY` se vuoi la mappa con le strade.
 3. Deploy. Nessun altro setup richiesto — niente Supabase, niente database.
 
 ## Unione CSV (`merge.html`)

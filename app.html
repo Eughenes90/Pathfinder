@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Percorsi portali — Tool</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  :root{ --bg:#12151a; --panel:#1a1f27; --panel2:#20262f; --border:#2a313c;
+    --text:#e8eaed; --muted:#8a94a3; --accent:#4fd1a5; --accent-dim:#2f6650;
+    --warn:#f2a65a; --danger:#e4636f; }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif; font-size:15px}
+  header{padding:16px 20px; border-bottom:1px solid var(--border); background:var(--panel);
+    display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap}
+  header h1{margin:0; font-size:17px} header p{margin:4px 0 0; color:var(--muted); font-size:13px}
+  header a{color:var(--muted); font-size:13px; text-decoration:none; border-bottom:1px dotted var(--muted)}
+  .wrap{display:flex; flex-direction:column; gap:16px; padding:16px; max-width:1100px; margin:0 auto}
+  @media(min-width:860px){ .wrap{flex-direction:row; align-items:flex-start} }
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px}
+  .sidebar{flex:0 0 300px; display:flex; flex-direction:column; gap:14px}
+  .main{flex:1; min-width:0; display:flex; flex-direction:column; gap:14px}
+  label{display:block; font-size:12px; color:var(--muted); margin-bottom:5px}
+  input[type=number]{width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    border-radius:7px; padding:8px 10px; font-size:14px}
+  .field{margin-bottom:12px}
+  .filebtn{display:block; text-align:center; border:1px dashed var(--border); border-radius:8px; padding:16px;
+    color:var(--muted); cursor:pointer; font-size:13px; background:var(--panel2)}
+  .filebtn.has-file{color:var(--accent); border-color:var(--accent-dim); border-style:solid}
+  input[type=file]{display:none}
+  button.primary{width:100%; background:var(--accent); color:#0b1310; border:none; border-radius:8px;
+    padding:11px; font-size:14px; font-weight:600; cursor:pointer; margin-top:4px}
+  button.primary:disabled{opacity:.4; cursor:not-allowed}
+  .status{font-size:12.5px; color:var(--muted); margin-top:8px; min-height:1.2em}
+  .status.err{color:var(--danger)} .status.ok{color:var(--accent)}
+  .alt-list{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px}
+  .alt-chip{flex:0 0 auto; border:1px solid var(--border); background:var(--panel2); color:var(--muted);
+    border-radius:20px; padding:7px 14px; font-size:13px; cursor:pointer; white-space:nowrap}
+  .alt-chip.active{border-color:var(--accent); color:var(--text); background:var(--accent-dim)}
+  .mapbox{background:var(--panel2); border:1px solid var(--border); border-radius:10px;
+    aspect-ratio:1/1; max-height:420px; overflow:hidden; position:relative}
+  .mapbox svg, .mapbox .gmap{width:100%; height:100%; display:block}
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+  .stat{background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center}
+  .stat b{display:block; font-size:18px} .stat span{font-size:11.5px; color:var(--muted)}
+  a.gmaps{display:block; text-align:center; background:var(--warn); color:#241300; text-decoration:none;
+    font-weight:600; border-radius:8px; padding:11px; font-size:14px}
+  .gmaps-list{display:flex; flex-direction:column; gap:8px}
+  .gmaps-note{font-size:12px; color:var(--muted); line-height:1.5; margin-bottom:2px}
+  .empty{color:var(--muted); font-size:13.5px; text-align:center; padding:30px 10px}
+  .hint{font-size:12px; color:var(--muted); margin-top:10px; line-height:1.5}
+  .marker-label{background:none!important; border:none!important; box-shadow:none!important;
+    font-weight:700; color:#0b1310; font-size:11px}
+  .leaflet-container{background:var(--panel2)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Percorsi portali non catturati</h1><p>Calcolo geometrico, nessuna API a pagamento</p></div>
+  <div style="display:flex; gap:14px">
+    <a href="index.html">← Home</a>
+    <a href="plugin.html">Plugin IITC</a>
+    <a href="merge.html">Unisci più CSV →</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="sidebar">
+    <div class="panel">
+      <div class="field">
+        <label>File JSON portali</label>
+        <label class="filebtn" id="filebtn" for="filein">Nessun file selezionato — tocca per caricare</label>
+        <input type="file" id="filein" accept="application/json,.json">
+        <div class="hint" style="margin-top:6px">Non hai ancora l'export? <a href="plugin.html" style="color:var(--accent)">Scarica il plugin IITC</a>.</div>
+      </div>
+      <div class="field">
+        <label>Tempo massimo tra portali (minuti)</label>
+        <input type="number" id="maxmin" value="10" min="1" max="60">
+      </div>
+      <div class="field">
+        <label>Velocità di camminata (km/h)</label>
+        <input type="number" id="speed" value="4.5" min="1" max="10" step="0.1">
+      </div>
+      <div class="field">
+        <label>Fattore correzione strade (pedonale)</label>
+        <input type="number" id="corr" value="1.15" min="1" max="2" step="0.05">
+      </div>
+      <div class="field">
+        <label>Minimo portali per percorso</label>
+        <input type="number" id="minPortals" value="2" min="2" max="500">
+      </div>
+      <button class="primary" id="calcbtn" disabled>Calcola percorsi</button>
+      <div class="status" id="status"></div>
+      <div class="hint">Fattore correzione: 1.1–1.2 in aree senza ostacoli, 1.3+ se ci sono fiumi, ferrovie o zone recintate tra i portali.</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="panel" id="resultsPanel" style="display:none">
+      <div class="alt-list" id="altList"></div>
+    </div>
+    <div class="panel"><div class="mapbox" id="mapbox"><div class="empty">Carica un file e calcola per vedere i percorsi</div></div></div>
+    <div class="panel" id="statsPanel" style="display:none">
+      <div class="stats">
+        <div class="stat"><b id="statCount">–</b><span>portali</span></div>
+        <div class="stat"><b id="statDist">–</b><span>distanza stimata</span></div>
+        <div class="stat"><b id="statTime">–</b><span>tempo stimato</span></div>
+      </div>
+    </div>
+    <div class="panel" id="gmapsPanel" style="display:none">
+      <div class="gmaps-note" id="gmapsNote"></div>
+      <div class="gmaps-list" id="gmapsList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let portals = [], alternatives = [], activeIdx = 0;
+let leafletMap = null, cartoApiKey = null;
+
+const filein = document.getElementById('filein');
+const filebtn = document.getElementById('filebtn');
+const calcbtn = document.getElementById('calcbtn');
+const statusEl = document.getElementById('status');
+
+function setStatus(msg, cls){ statusEl.textContent = msg; statusEl.className = 'status' + (cls?' '+cls:''); }
+
+fetch('/api/config').then(r=>r.json()).then(cfg => { cartoApiKey = cfg.cartoApiKey || ''; }).catch(()=>{});
+
+// ---------- Upload file ----------
+filein.addEventListener('change', () => {
+  const f = filein.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!Array.isArray(data)) throw new Error('Il JSON deve essere un array di portali');
+      portals = data.map((p,i) => ({
+        id: p.guid || ('p'+i), title: p.title || ('Portale '+(i+1)),
+        lat: Number(p.lat), lng: Number(p.lng)
+      })).filter(p => isFinite(p.lat) && isFinite(p.lng));
+      if (portals.length < 2) throw new Error('Servono almeno 2 portali con coordinate valide');
+      filebtn.textContent = f.name + ' — ' + portals.length + ' portali';
+      filebtn.classList.add('has-file');
+      calcbtn.disabled = false;
+      setStatus('File caricato. Premi Calcola.', 'ok');
+    } catch (e) { setStatus('Errore: ' + e.message, 'err'); calcbtn.disabled = true; }
+  };
+  reader.readAsText(f);
+});
+
+// ---------- Geometria ----------
+function haversine(a,b){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(b.lat-a.lat), dLng=toRad(b.lng-a.lng);
+  const s=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+
+// Indice spaziale a griglia: invece di confrontare ogni portale con tutti gli
+// altri (O(N²), inutilizzabile su migliaia di punti), ogni portale confronta
+// solo con quelli nella sua cella e nelle 8 celle adiacenti. La cella è
+// dimensionata sulla soglia di distanza, quindi cattura tutti i vicini
+// plausibili senza dover scandire l'intero dataset. Costo medio: vicino a O(N).
+function buildGraphGrid(points, thresholdM){
+  const n = points.length;
+  const adj = Array.from({length:n}, () => []);
+  if (n === 0) return adj;
+
+  const avgLat = points.reduce((s,p)=>s+p.lat,0) / n;
+  const cellLatDeg = thresholdM / 111320;
+  const cellLngDeg = thresholdM / (111320 * Math.cos(avgLat*Math.PI/180) || 1);
+
+  const grid = new Map();
+  const cellKey = (r,c) => r+','+c;
+  const cellOf = p => [Math.floor(p.lat/cellLatDeg), Math.floor(p.lng/cellLngDeg)];
+
+  for (let i=0;i<n;i++){
+    const [r,c] = cellOf(points[i]);
+    const key = cellKey(r,c);
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(i);
+  }
+
+  for (let i=0;i<n;i++){
+    const [r,c] = cellOf(points[i]);
+    for (let dr=-1; dr<=1; dr++){
+      for (let dc=-1; dc<=1; dc++){
+        const bucket = grid.get(cellKey(r+dr, c+dc));
+        if (!bucket) continue;
+        for (const j of bucket){
+          if (j <= i) continue; // evita doppio conteggio e confronto con se stesso
+          if (haversine(points[i], points[j]) <= thresholdM){
+            adj[i].push(j); adj[j].push(i);
+          }
+        }
+      }
+    }
+  }
+  return adj;
+}
+
+function componentsFrom(adj, n, minSize){
+  const seen = new Array(n).fill(false), clusters = [];
+  for (let i=0;i<n;i++){
+    if (seen[i]) continue;
+    const stack=[i], comp=[]; seen[i]=true;
+    while (stack.length){ const cur=stack.pop(); comp.push(cur);
+      for (const nb of adj[cur]) if (!seen[nb]) { seen[nb]=true; stack.push(nb); } }
+    if (comp.length>=minSize) clusters.push(comp);
+  }
+  clusters.sort((a,b)=>b.length-a.length);
+  return clusters;
+}
+
+function orderRoute(idxs, points){
+  const remaining = idxs.slice();
+  const route = [remaining.shift()];
+  while (remaining.length){
+    const last = route[route.length-1];
+    let bi=0, bd=Infinity;
+    for (let k=0;k<remaining.length;k++){
+      const d = haversine(points[last], points[remaining[k]]);
+      if (d<bd){ bd=d; bi=k; }
+    }
+    route.push(remaining.splice(bi,1)[0]);
+  }
+  return route;
+}
+
+function routeStats(idxs, points, corr, speedKmh){
+  let dist=0;
+  for (let i=1;i<idxs.length;i++) dist += haversine(points[idxs[i-1]], points[idxs[i]]);
+  dist *= corr;
+  const mins = dist / (speedKmh*1000/60);
+  return { dist, mins };
+}
+
+// ---------- Calcolo ----------
+document.getElementById('calcbtn').addEventListener('click', () => {
+  const maxMin = parseFloat(document.getElementById('maxmin').value) || 10;
+  const speed = parseFloat(document.getElementById('speed').value) || 4.5;
+  const corr = parseFloat(document.getElementById('corr').value) || 1.15;
+  const minSize = parseInt(document.getElementById('minPortals').value) || 2;
+
+  calcbtn.disabled = true;
+  setStatus('Calcolo su ' + portals.length + ' portali…');
+
+  // setTimeout(0) lascia respirare l'interfaccia prima del calcolo sincrono,
+  // utile con dataset grandi (migliaia di portali) per non bloccare il rendering
+  setTimeout(() => {
+    const t0 = performance.now();
+    const thresholdM = (speed*1000/60) * maxMin / corr;
+    const adj = buildGraphGrid(portals, thresholdM);
+    const clusters = componentsFrom(adj, portals.length, minSize);
+    const elapsed = Math.round(performance.now() - t0);
+
+    calcbtn.disabled = false;
+
+    if (!clusters.length) {
+      setStatus('Nessun cluster trovato (calcolato in ' + elapsed + ' ms): prova ad aumentare i minuti.', 'err');
+      document.getElementById('resultsPanel').style.display = 'none';
+      document.getElementById('statsPanel').style.display = 'none';
+      document.getElementById('gmapsPanel').style.display = 'none';
+      return;
+    }
+
+    alternatives = clusters.slice(0,10).map(idxs => {
+      const route = orderRoute(idxs, portals);
+      const st = routeStats(route, portals, corr, speed);
+      return { route: route.map(i=>portals[i]), dist: st.dist, minutes: st.mins };
+    });
+    activeIdx = 0;
+    setStatus(alternatives.length + ' alternative su ' + clusters.length + ' cluster trovati (' + elapsed + ' ms).', 'ok');
+    renderAltList();
+    renderAlternative(0);
+  }, 0);
+});
+
+function renderAltList(){
+  const panel = document.getElementById('resultsPanel');
+  const list = document.getElementById('altList');
+  panel.style.display = 'block'; list.innerHTML = '';
+  alternatives.forEach((alt,i) => {
+    const chip = document.createElement('div');
+    chip.className = 'alt-chip' + (i===activeIdx?' active':'');
+    chip.textContent = 'Percorso ' + (i+1) + ' · ' + alt.route.length + ' portali';
+    chip.onclick = () => { activeIdx=i; renderAltList(); renderAlternative(i); };
+    list.appendChild(chip);
+  });
+}
+
+function renderAlternative(idx){
+  const alt = alternatives[idx];
+  document.getElementById('statsPanel').style.display = 'block';
+  document.getElementById('statCount').textContent = alt.route.length;
+  document.getElementById('statDist').textContent = (alt.dist/1000).toFixed(2) + ' km';
+  document.getElementById('statTime').textContent = Math.round(alt.minutes) + ' min';
+  drawMap(alt.route);
+  renderGoogleMapsLinks(alt.route);
+}
+
+// Il link "classico" di Google Maps (quello gratuito, senza chiave API) accetta
+// un numero limitato di tappe per richiesta. Oltre quella soglia l'app le
+// ignora o dà errore. Si spezza il percorso in blocchi da massimo 10 punti,
+// facendo sì che ogni blocco inizi dall'ultimo punto del blocco precedente:
+// così il cammino resta continuo, senza "buchi" tra un link e l'altro.
+const MAX_POINTS_PER_LINK = 10;
+
+function splitRouteForGoogleMaps(route, maxPoints){
+  if (route.length <= maxPoints) return [route];
+  const segments = [];
+  let start = 0;
+  while (start < route.length - 1) {
+    const end = Math.min(start + maxPoints - 1, route.length - 1);
+    segments.push(route.slice(start, end + 1));
+    if (end === route.length - 1) break;
+    start = end; // il prossimo blocco riparte da qui: continuità garantita
+  }
+  return segments;
+}
+
+function renderGoogleMapsLinks(route){
+  const panel = document.getElementById('gmapsPanel');
+  const note = document.getElementById('gmapsNote');
+  const list = document.getElementById('gmapsList');
+  panel.style.display = 'block';
+  list.innerHTML = '';
+
+  const segments = splitRouteForGoogleMaps(route, MAX_POINTS_PER_LINK);
+
+  if (segments.length === 1) {
+    note.textContent = '';
+    const a = document.createElement('a');
+    a.className = 'gmaps'; a.target = '_blank';
+    a.href = buildGoogleMapsUrl(segments[0]);
+    a.textContent = 'Apri percorso in Google Maps';
+    list.appendChild(a);
+    return;
+  }
+
+  note.textContent = 'Percorso diviso in ' + segments.length + ' tratti (Google Maps accetta poche tappe per link): apri il primo, naviga fino alla fine, poi passa al successivo — ogni tratto riparte esattamente dall\'ultima tappa di quello prima.';
+  segments.forEach((seg, i) => {
+    const a = document.createElement('a');
+    a.className = 'gmaps'; a.target = '_blank';
+    a.href = buildGoogleMapsUrl(seg);
+    const fromN = route.indexOf(seg[0]) + 1, toN = route.indexOf(seg[seg.length-1]) + 1;
+    a.textContent = 'Tratto ' + (i+1) + ' — tappe ' + fromN + '–' + toN;
+    list.appendChild(a);
+  });
+}
+
+function buildGoogleMapsUrl(route){
+  const enc = p => p.lat.toFixed(6)+','+p.lng.toFixed(6);
+  const origin = enc(route[0]), destination = enc(route[route.length-1]);
+  const mid = route.slice(1,-1).map(enc).join('|');
+  let url = 'https://www.google.com/maps/dir/?api=1&origin='+origin+'&destination='+destination+'&travelmode=walking';
+  if (mid) url += '&waypoints=' + encodeURIComponent(mid);
+  return url;
+}
+
+function drawMap(route){
+  const box = document.getElementById('mapbox');
+  if (!cartoApiKey || !window.L) { drawMapSVG(route); return; }
+
+  box.innerHTML = '<div class="gmap" id="leafletDiv"></div>';
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+  leafletMap = L.map('leafletDiv', { zoomControl: true });
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=' + cartoApiKey, {
+    subdomains: 'abcd',
+    maxZoom: 20,
+    attribution: '&copy; OpenStreetMap contributors, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(leafletMap);
+
+  const latlngs = route.map(p => [p.lat, p.lng]);
+  const poly = L.polyline(latlngs, { color: '#4fd1a5', weight: 4 }).addTo(leafletMap);
+
+  route.forEach((p, i) => {
+    const color = i===0 ? '#f2a65a' : (i===route.length-1 ? '#e4636f' : '#4fd1a5');
+    L.circleMarker([p.lat, p.lng], { radius:11, fillColor:color, color:'#1a1f27', weight:2, fillOpacity:1 })
+      .bindTooltip(String(i+1), { permanent:true, direction:'center', className:'marker-label' })
+      .bindPopup(p.title)
+      .addTo(leafletMap);
+  });
+
+  leafletMap.fitBounds(poly.getBounds(), { padding:[30,30] });
+}
+
+function drawMapSVG(route){
+  const box = document.getElementById('mapbox');
+  const W=600,H=600,pad=40;
+  const lats=route.map(p=>p.lat), lngs=route.map(p=>p.lng);
+  const minLat=Math.min(...lats), maxLat=Math.max(...lats);
+  const minLng=Math.min(...lngs), maxLng=Math.max(...lngs);
+  const spanLat=Math.max(maxLat-minLat,0.0005), spanLng=Math.max(maxLng-minLng,0.0005);
+  const cosLat=Math.cos(minLat*Math.PI/180);
+  const scale=Math.min((W-2*pad)/(spanLng*cosLat),(H-2*pad)/spanLat);
+  const project = p => [
+    pad+(p.lng-minLng)*cosLat*scale+((W-2*pad)-spanLng*cosLat*scale)/2,
+    H-pad-(p.lat-minLat)*scale-((H-2*pad)-spanLat*scale)/2
+  ];
+  const pts = route.map(project);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect width="${W}" height="${H}" fill="var(--panel2)"/>`;
+  for (let g=0;g<=W;g+=60) svg+=`<line x1="${g}" y1="0" x2="${g}" y2="${H}" stroke="var(--border)"/>`;
+  for (let g=0;g<=H;g+=60) svg+=`<line x1="0" y1="${g}" x2="${W}" y2="${g}" stroke="var(--border)"/>`;
+  svg += `<path d="M ${pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L ')}" fill="none" stroke="var(--accent)" stroke-width="3"/>`;
+  pts.forEach(([x,y],i) => {
+    const fill = i===0?'var(--warn)':(i===pts.length-1?'var(--danger)':'var(--accent)');
+    svg += `<circle cx="${x}" cy="${y}" r="10" fill="${fill}" stroke="var(--panel)" stroke-width="2"/>`;
+    svg += `<text x="${x}" y="${y+4}" font-size="10" text-anchor="middle" fill="#0b1310" font-weight="700">${i+1}</text>`;
+  });
+  svg += '</svg>';
+  box.innerHTML = svg;
+}
+</script>
+</body>
+</html>

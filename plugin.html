@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugin IITC — Esporta portali non catturati</title>
+<style>
+  :root{ --bg:#12151a; --panel:#1a1f27; --panel2:#20262f; --border:#2a313c;
+    --text:#e8eaed; --muted:#8a94a3; --accent:#4fd1a5; --accent-dim:#2f6650;
+    --warn:#f2a65a; --danger:#e4636f; }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif; font-size:15px}
+  header{padding:16px 20px; border-bottom:1px solid var(--border); background:var(--panel);
+    display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap}
+  header h1{margin:0; font-size:17px} header p{margin:4px 0 0; color:var(--muted); font-size:13px}
+  header a{color:var(--muted); font-size:13px; text-decoration:none; border-bottom:1px dotted var(--muted)}
+  main{max-width:720px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:16px}
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px}
+  h2{margin:0 0 10px; font-size:17px}
+  h3{margin:0 0 10px; font-size:15px}
+  p{color:var(--muted); font-size:13.5px; line-height:1.7; margin:0 0 10px}
+  .cta{display:inline-block; background:var(--accent); color:#0b1310; text-decoration:none;
+    font-weight:600; font-size:15px; padding:13px 24px; border-radius:9px}
+  .cta.secondary{background:var(--panel2); color:var(--text); border:1px solid var(--border); margin-left:10px; font-size:13.5px; padding:11px 18px}
+  ol{margin:0; padding-left:20px; color:var(--muted); font-size:13.5px; line-height:1.9}
+  ol li strong{color:var(--text)}
+  code{background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:1px 6px; font-size:12.5px; color:var(--accent)}
+  .warn{background:#3a2f1f; border:1px solid #5a4a2a; border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--warn); line-height:1.6}
+  .meta{display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; color:var(--muted); margin-top:12px; border-top:1px solid var(--border); padding-top:12px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Plugin IITC</h1><p>Esporta i portali non catturati, pronti per il tool</p></div>
+  <div style="display:flex; gap:14px">
+    <a href="index.html">← Home</a>
+    <a href="app.html">Vai al tool →</a>
+    <a href="merge.html">Unisci CSV</a>
+  </div>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Export Uncaptured Portals</h2>
+    <p>Uno script per IITC (Ingress Intel Total Conversion) che legge i portali già caricati sulla mappa Intel, tiene solo quelli <strong style="color:var(--text)">non ancora catturati</strong> da te, ed esporta un file JSON — lo stesso formato che <a href="app.html" style="color:var(--accent)">il tool</a> si aspetta in caricamento.</p>
+    <p>Gira interamente nel tuo browser: nessuna chiamata a endpoint non ufficiali oltre a quelle che IITC fa già normalmente per disegnare la mappa. Non serve nessun account, nessuna chiave, nessun server.</p>
+    <a class="cta" href="downloads/export-uncaptured-portals.user.js" download>Scarica il plugin (.user.js)</a>
+  </div>
+
+  <div class="panel">
+    <h3>Installazione</h3>
+    <ol>
+      <li><strong>Installa un gestore di userscript</strong> nel browser, se non ce l'hai già: <a href="https://www.tampermonkey.net/" style="color:var(--accent)">Tampermonkey</a> (Chrome, Edge, Firefox, Safari) è il più diffuso.</li>
+      <li><strong>Clicca "Scarica il plugin"</strong> qui sopra: Tampermonkey riconosce il file <code>.user.js</code> e apre automaticamente la schermata di installazione. Conferma con "Installa".</li>
+      <li><strong>Apri la mappa Intel</strong> di Ingress (<code>intel.ingress.com</code>) — il plugin è già attivo, comparirà una voce in più nella barra degli strumenti in alto.</li>
+      <li><strong>Scorri la zona che ti interessa a zoom 15 o superiore</strong> — IITC carica i dati completi dei portali solo a quel livello di zoom in su.</li>
+      <li><strong>Clicca "Export non-catturati"</strong> nella toolbar: scarica un JSON con tutti i portali non catturati attualmente visibili sulla mappa.</li>
+      <li><strong>Carica quel file</strong> nel <a href="app.html" style="color:var(--accent)">tool</a> per calcolare i percorsi.</li>
+    </ol>
+  </div>
+
+  <div class="panel">
+    <div class="warn">
+      Il plugin esporta solo i portali che hai effettivamente scorso a schermo, non un'area intera in automatico: è lo stesso limite di qualsiasi plugin IITC di esportazione, dovuto a come Intel carica i dati. Per aree grandi, panorama a tratti e <a href="merge.html" style="color:var(--warn); text-decoration:underline">unisci i file</a> con l'altra pagina del sito.
+    </div>
+    <div class="meta">
+      <span>Versione 0.1.0</span>
+      <span>Nessun dato inviato a server esterni</span>
+      <span>Compatibile con IITC standard</span>
+    </div>
+  </div>
+</main>
+</body>
+</html>
