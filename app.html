@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Percorsi portali — Tool</title>
@@ -41,7 +42,7 @@
   .alt-chip.active{border-color:var(--accent); color:var(--text); background:var(--accent-dim)}
   .mapbox{background:var(--panel2); border:1px solid var(--border); border-radius:10px;
     aspect-ratio:1/1; max-height:420px; overflow:hidden; position:relative}
-  .mapbox svg, .mapbox .gmap{width:100%; height:100%; display:block}
+  .mapbox > svg, .mapbox .gmap{width:100%; height:100%; display:block}
   .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
   .stat{background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center}
   .stat b{display:block; font-size:18px} .stat span{font-size:11.5px; color:var(--muted)}
@@ -611,7 +612,8 @@ function drawMap(route){
 
   box.innerHTML = '<div class="gmap" id="leafletDiv"></div>';
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
-  leafletMap = L.map('leafletDiv', { zoomControl: true });
+  leafletMap = L.map('leafletDiv', { zoomControl: true, attributionControl: false });
+  L.control.attribution({ prefix: '<a href="https://leafletjs.com/">Leaflet</a>' }).addTo(leafletMap);
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=' + cartoApiKey, {
     subdomains: 'abcd',
@@ -637,6 +639,12 @@ function drawMap(route){
       .addTo(leafletMap);
   });
 
+  // Il contenitore riceve le sue dimensioni via CSS nello stesso istante in
+  // cui Leaflet lo misura: senza questa chiamata, Leaflet può "congelarsi"
+  // su una dimensione 0×0 letta troppo presto, e considerare fuori vista
+  // (quindi non disegnare) quasi tutto il percorso anche se il riquadro ha
+  // visivamente la dimensione giusta.
+  leafletMap.invalidateSize();
   leafletMap.fitBounds(poly.getBounds(), { padding:[30,30] });
 }
 
