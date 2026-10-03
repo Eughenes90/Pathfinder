@@ -54,9 +54,6 @@
   .marker-label{background:none!important; border:none!important; box-shadow:none!important;
     font-weight:700; color:#0b1310; font-size:11px}
   .leaflet-container{background:var(--panel2)}
-  .leaflet-attribution-flag {
-        display: none !important;
-    }
 </style>
 </head>
 <body>
@@ -94,9 +91,18 @@
         <label>Minimo portali per percorso</label>
         <input type="number" id="minPortals" value="2" min="2" max="500">
       </div>
+      <div class="field">
+        <label>Massimo portali per percorso</label>
+        <input type="number" id="maxPortals" value="40" min="2" max="1000">
+      </div>
+      <div class="field">
+        <label>Tempo massimo totale per percorso (minuti) — 0 = nessun limite</label>
+        <input type="number" id="maxTotalTime" value="120" min="0" max="1440" step="5">
+      </div>
       <button class="primary" id="calcbtn" disabled>Calcola percorsi</button>
       <div class="status" id="status"></div>
-      <div class="hint">Fattore correzione: 1.1–1.2 in aree senza ostacoli, 1.3+ se ci sono fiumi, ferrovie o zone recintate tra i portali.</div>
+      <div class="hint">Fattore correzione: 1.1–1.2 in aree senza ostacoli, 1.3+ se ci sono fiumi, ferrovie o zone recintate tra i portali. Un cluster viene diviso in più percorsi consecutivi non appena supera il numero massimo di portali <strong style="color:var(--text)">o</strong> il tempo massimo totale, quale arriva prima.</div>
+      <div class="hint"><a href="#" id="resetDefaults" style="color:var(--accent)">Ripristina valori di default</a> — i parametri vengono ricordati in questo browser.</div>
     </div>
   </div>
 
@@ -115,6 +121,11 @@
     <div class="panel" id="gmapsPanel" style="display:none">
       <div class="gmaps-note" id="gmapsNote"></div>
       <div class="gmaps-list" id="gmapsList"></div>
+      <div style="display:flex; gap:8px; margin-top:10px">
+        <button class="primary" id="dlLinksBtn" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); margin-top:0">Scarica link (.txt)</button>
+        <button class="primary" id="dlGpxBtn" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); margin-top:0">Scarica GPX</button>
+      </div>
+      <div class="hint" id="gpxHint"></div>
     </div>
   </div>
 </div>
@@ -131,6 +142,45 @@ const statusEl = document.getElementById('status');
 function setStatus(msg, cls){ statusEl.textContent = msg; statusEl.className = 'status' + (cls?' '+cls:''); }
 
 fetch('/api/config').then(r=>r.json()).then(cfg => { cartoApiKey = cfg.cartoApiKey || ''; }).catch(()=>{});
+
+// ---------- Parametri ricordati in un cookie (solo preferenze, nessun dato sensibile) ----------
+const SETTINGS_FIELDS = ['maxmin','speed','corr','minPortals','maxPortals','maxTotalTime'];
+const SETTINGS_DEFAULTS = { maxmin:10, speed:4.5, corr:1.15, minPortals:2, maxPortals:40, maxTotalTime:120 };
+const SETTINGS_COOKIE = 'ppSettings';
+
+function readCookie(name){
+  const m = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function writeCookie(name, value){
+  document.cookie = name + '=' + encodeURIComponent(value) + '; Max-Age=31536000; Path=/; SameSite=Lax; Secure';
+}
+function deleteCookie(name){
+  document.cookie = name + '=; Max-Age=0; Path=/; SameSite=Lax; Secure';
+}
+
+function loadSettings(){
+  const raw = readCookie(SETTINGS_COOKIE);
+  let saved = {};
+  if (raw) { try { saved = JSON.parse(raw); } catch {} }
+  SETTINGS_FIELDS.forEach(id => {
+    document.getElementById(id).value = saved[id] ?? SETTINGS_DEFAULTS[id];
+  });
+}
+function saveSettings(){
+  const obj = {};
+  SETTINGS_FIELDS.forEach(id => { obj[id] = document.getElementById(id).value; });
+  writeCookie(SETTINGS_COOKIE, JSON.stringify(obj));
+}
+loadSettings();
+SETTINGS_FIELDS.forEach(id => document.getElementById(id).addEventListener('change', saveSettings));
+
+document.getElementById('resetDefaults').addEventListener('click', (e) => {
+  e.preventDefault();
+  deleteCookie(SETTINGS_COOKIE);
+  SETTINGS_FIELDS.forEach(id => { document.getElementById(id).value = SETTINGS_DEFAULTS[id]; });
+  setStatus('Valori ripristinati.', 'ok');
+});
 
 // ---------- Upload file ----------
 filein.addEventListener('change', () => {
@@ -233,6 +283,105 @@ function orderRoute(idxs, points){
   return route;
 }
 
+// Rifinitura 2-opt: il nearest-neighbor di orderRoute() può lasciare "salti
+// indietro" evitabili (va sempre al più vicino non ancora visitato, senza
+// guardare avanti). 2-opt scambia coppie di tratti se invertirli accorcia il
+// percorso totale, ripetendo finché non trova più miglioramenti o scade il
+// tempo assegnato — un budget per evitare che cluster enormi blocchino il calcolo.
+function twoOpt(idxs, points, timeBudgetMs){
+  const route = idxs.slice();
+  const n = route.length;
+  if (n < 4) return route;
+  const t0 = performance.now();
+  let improved = true;
+  while (improved){
+    improved = false;
+    outer:
+    for (let i=0;i<n-2;i++){
+      for (let j=i+2;j<n-1;j++){
+        const a=route[i], b=route[i+1], c=route[j], d=route[j+1];
+        const before = haversine(points[a],points[b]) + haversine(points[c],points[d]);
+        const after  = haversine(points[a],points[c]) + haversine(points[b],points[d]);
+        if (after + 1e-6 < before){
+          let lo=i+1, hi=j;
+          while (lo<hi){ const t=route[lo]; route[lo]=route[hi]; route[hi]=t; lo++; hi--; }
+          improved = true;
+        }
+        if (performance.now()-t0 > timeBudgetMs) break outer;
+      }
+    }
+    if (performance.now()-t0 > timeBudgetMs) break;
+  }
+  return route;
+}
+
+// Divide un array in blocchi consecutivi di massimo maxSize elementi, con un
+// elemento di sovrapposizione tra un blocco e il successivo (l'ultimo del
+// blocco N è anche il primo del blocco N+1): così, che si tratti di tappe di
+// un link Google Maps o di percorsi separati, il cammino resta continuo senza
+// "buchi" quando si passa da un blocco al successivo.
+function chunkWithOverlap(arr, maxSize){
+  if (arr.length <= maxSize) return [arr];
+  const chunks = [];
+  let start = 0;
+  while (start < arr.length - 1) {
+    const end = Math.min(start + maxSize - 1, arr.length - 1);
+    chunks.push(arr.slice(start, end + 1));
+    if (end === arr.length - 1) break;
+    start = end;
+  }
+  return chunks;
+}
+
+// Come chunkWithOverlap, ma un blocco si chiude al PRIMO di due limiti
+// raggiunti: numero massimo di portali, o tempo di cammino cumulativo
+// stimato (coerente con la stessa stima usata per le statistiche del
+// percorso: distanza in linea d'aria corretta dal fattore strade). Utile
+// perché "40 portali" può voler dire 10 minuti in una zona densa o 3 ore in
+// una zona rada — il tempo è il vincolo che conta davvero per chi cammina.
+// maxTimeMin=0 (o falsy) disattiva il vincolo di tempo, resta solo maxSize.
+function chunkByCountAndTime(idxs, points, maxSize, maxTimeMin, corr, speedKmh){
+  const n = idxs.length;
+  if (n <= 1) return [idxs];
+  const speedMetersPerMin = speedKmh*1000/60;
+  const chunks = [];
+  let start = 0;
+  while (start < n - 1) {
+    let end = start, elapsedMin = 0;
+    while (end < n - 1) {
+      const legMin = (haversine(points[idxs[end]], points[idxs[end+1]]) * corr) / speedMetersPerMin;
+      const countIfExtended = (end + 1) - start + 1;
+      if (countIfExtended > maxSize) break;
+      // end>start garantisce almeno una tappa per blocco anche se la prima
+      // gamba da sola supera già il tempo massimo (evita blocchi vuoti)
+      if (maxTimeMin && (elapsedMin + legMin) > maxTimeMin && end > start) break;
+      elapsedMin += legMin;
+      end++;
+    }
+    chunks.push(idxs.slice(start, end+1));
+    if (end === n-1) break;
+    start = end; // sovrapposizione: continuità tra un blocco e il successivo
+  }
+  return chunks;
+}
+
+// Lo split per conteggio/tempo non sa nulla del "Minimo portali per
+// percorso": può lasciare un'ultima parte più piccola di quel minimo. Se
+// succede, la si fonde nella parte precedente invece di mostrare un percorso
+// che viola il minimo che l'utente ha scelto apposta — l'unione può superare
+// un po' il massimo impostato, scelta preferibile a un percorso trascurabile
+// o a perdere portali.
+function mergeSmallTail(chunks, minSize){
+  if (chunks.length < 2) return chunks;
+  const last = chunks[chunks.length-1];
+  if (last.length < minSize) {
+    const prev = chunks[chunks.length-2];
+    const merged = prev.concat(last.slice(1)); // slice(1): evita di duplicare il punto di sovrapposizione
+    return chunks.slice(0, -2).concat([merged]);
+  }
+  return chunks;
+}
+
 function routeStats(idxs, points, corr, speedKmh){
   let dist=0;
   for (let i=1;i<idxs.length;i++) dist += haversine(points[idxs[i-1]], points[idxs[i]]);
@@ -242,11 +391,22 @@ function routeStats(idxs, points, corr, speedKmh){
 }
 
 // ---------- Calcolo ----------
+const TWO_OPT_BUDGET_MS = 200; // per cluster, limite per non bloccare su dataset enormi
+const GPX_SAFE_LIMIT = 500; // limite pratico di alcuni dispositivi GPS più datati
+
 document.getElementById('calcbtn').addEventListener('click', () => {
+  saveSettings();
   const maxMin = parseFloat(document.getElementById('maxmin').value) || 10;
   const speed = parseFloat(document.getElementById('speed').value) || 4.5;
   const corr = parseFloat(document.getElementById('corr').value) || 1.15;
   const minSize = parseInt(document.getElementById('minPortals').value) || 2;
+  const maxSize = parseInt(document.getElementById('maxPortals').value) || 40;
+  const maxTotalTime = parseFloat(document.getElementById('maxTotalTime').value) || 0;
+
+  if (minSize > maxSize) {
+    setStatus('"Minimo portali" (' + minSize + ') non può superare "Massimo portali" (' + maxSize + '): correggi uno dei due valori.', 'err');
+    return;
+  }
 
   calcbtn.disabled = true;
   setStatus('Calcolo su ' + portals.length + ' portali…');
@@ -258,11 +418,31 @@ document.getElementById('calcbtn').addEventListener('click', () => {
     const thresholdM = (speed*1000/60) * maxMin / corr;
     const adj = buildGraphGrid(portals, thresholdM);
     const clusters = componentsFrom(adj, portals.length, minSize);
-    const elapsed = Math.round(performance.now() - t0);
 
+    // Ogni cluster, una volta ordinato, viene diviso in blocchi di massimo
+    // maxSize portali (sovrapposti di un punto, per continuità) — un cluster
+    // enorme per via dell'effetto catena diventa così più percorsi
+    // consecutivi e camminabili, invece di un unico percorso irrealistico.
+    alternatives = [];
+    for (const idxs of clusters) {
+      if (alternatives.length >= 10) break;
+      let ordered = orderRoute(idxs, portals);
+      ordered = twoOpt(ordered, portals, TWO_OPT_BUDGET_MS);
+      const parts = mergeSmallTail(chunkByCountAndTime(ordered, portals, maxSize, maxTotalTime, corr, speed), minSize);
+      parts.forEach((part, pi) => {
+        if (alternatives.length >= 10) return;
+        const st = routeStats(part, portals, corr, speed);
+        alternatives.push({
+          route: part.map(i=>portals[i]), dist: st.dist, minutes: st.mins,
+          part: pi+1, partsTotal: parts.length
+        });
+      });
+    }
+
+    const elapsed = Math.round(performance.now() - t0);
     calcbtn.disabled = false;
 
-    if (!clusters.length) {
+    if (!alternatives.length) {
       setStatus('Nessun cluster trovato (calcolato in ' + elapsed + ' ms): prova ad aumentare i minuti.', 'err');
       document.getElementById('resultsPanel').style.display = 'none';
       document.getElementById('statsPanel').style.display = 'none';
@@ -270,11 +450,6 @@ document.getElementById('calcbtn').addEventListener('click', () => {
       return;
     }
 
-    alternatives = clusters.slice(0,10).map(idxs => {
-      const route = orderRoute(idxs, portals);
-      const st = routeStats(route, portals, corr, speed);
-      return { route: route.map(i=>portals[i]), dist: st.dist, minutes: st.mins };
-    });
     activeIdx = 0;
     setStatus(alternatives.length + ' alternative su ' + clusters.length + ' cluster trovati (' + elapsed + ' ms).', 'ok');
     renderAltList();
@@ -289,7 +464,8 @@ function renderAltList(){
   alternatives.forEach((alt,i) => {
     const chip = document.createElement('div');
     chip.className = 'alt-chip' + (i===activeIdx?' active':'');
-    chip.textContent = 'Percorso ' + (i+1) + ' · ' + alt.route.length + ' portali';
+    const partLabel = alt.partsTotal > 1 ? (' · parte ' + alt.part + '/' + alt.partsTotal) : '';
+    chip.textContent = 'Percorso ' + (i+1) + partLabel + ' · ' + alt.route.length + ' portali';
     chip.onclick = () => { activeIdx=i; renderAltList(); renderAlternative(i); };
     list.appendChild(chip);
   });
@@ -303,6 +479,11 @@ function renderAlternative(idx){
   document.getElementById('statTime').textContent = Math.round(alt.minutes) + ' min';
   drawMap(alt.route);
   renderGoogleMapsLinks(alt.route);
+
+  const gpxHint = document.getElementById('gpxHint');
+  gpxHint.textContent = alt.route.length > GPX_SAFE_LIMIT
+    ? ('Attenzione: ' + alt.route.length + ' punti — alcuni dispositivi GPS (es. Garmin più datati) hanno un limite pratico intorno a ' + GPX_SAFE_LIMIT + ' waypoint per rotta. Riduci "Massimo portali per percorso" se lo usi su un dispositivo del genere.')
+    : '';
 }
 
 // Il link "classico" di Google Maps (quello gratuito, senza chiave API) accetta
@@ -313,17 +494,77 @@ function renderAlternative(idx){
 const MAX_POINTS_PER_LINK = 10;
 
 function splitRouteForGoogleMaps(route, maxPoints){
-  if (route.length <= maxPoints) return [route];
-  const segments = [];
-  let start = 0;
-  while (start < route.length - 1) {
-    const end = Math.min(start + maxPoints - 1, route.length - 1);
-    segments.push(route.slice(start, end + 1));
-    if (end === route.length - 1) break;
-    start = end; // il prossimo blocco riparte da qui: continuità garantita
-  }
-  return segments;
+  return chunkWithOverlap(route, maxPoints);
 }
+
+function downloadAllLinks(){
+  const alt = alternatives[activeIdx];
+  if (!alt) return;
+  const segments = splitRouteForGoogleMaps(alt.route, MAX_POINTS_PER_LINK);
+  const lines = [
+    'Percorso ' + (activeIdx+1) + ' — ' + alt.route.length + ' portali, ' +
+    (alt.dist/1000).toFixed(2) + ' km, ~' + Math.round(alt.minutes) + ' min stimati',
+    ''
+  ];
+  segments.forEach((seg, i) => {
+    const fromN = alt.route.indexOf(seg[0]) + 1, toN = alt.route.indexOf(seg[seg.length-1]) + 1;
+    lines.push('Tratto ' + (i+1) + ' (tappe ' + fromN + '–' + toN + '):');
+    lines.push(buildGoogleMapsUrl(seg));
+    lines.push('');
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'percorso-' + (activeIdx+1) + '-google-maps-link.txt';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+document.getElementById('dlLinksBtn').addEventListener('click', downloadAllLinks);
+
+// Il formato GPX in sé non ha un limite di punti — ma molti dispositivi e app
+// sì: i vecchi Garmin da escursionismo si fermano spesso intorno ai 500
+// waypoint per rotta, alcune app mobile iniziano a rallentare oltre qualche
+// migliaio di trackpoint. Con il tetto "Massimo portali per percorso" già
+// impostato, ogni file resta ben sotto queste soglie — l'avviso compare solo
+// se l'hai alzato molto.
+function escapeXml(s){
+  return String(s).replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
+}
+
+function buildGPX(route, title){
+  const pts = route.map((p,i) =>
+    `    <rtept lat="${p.lat}" lon="${p.lng}"><name>${escapeXml(i+1)} — ${escapeXml(p.title)}</name></rtept>`
+  ).join('\n');
+  const trkpts = route.map(p => `      <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Percorsi portali" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${escapeXml(title)}</name></metadata>
+  <rte>
+    <name>${escapeXml(title)}</name>
+${pts}
+  </rte>
+  <trk>
+    <name>${escapeXml(title)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+}
+
+function downloadGPX(){
+  const alt = alternatives[activeIdx];
+  if (!alt) return;
+  const title = 'Percorso ' + (activeIdx+1) + (alt.partsTotal>1 ? (' parte ' + alt.part) : '');
+  const gpx = buildGPX(alt.route, title);
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'percorso-' + (activeIdx+1) + '.gpx';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+document.getElementById('dlGpxBtn').addEventListener('click', downloadGPX);
 
 function renderGoogleMapsLinks(route){
   const panel = document.getElementById('gmapsPanel');
@@ -381,7 +622,14 @@ function drawMap(route){
   const latlngs = route.map(p => [p.lat, p.lng]);
   const poly = L.polyline(latlngs, { color: '#4fd1a5', weight: 4 }).addTo(leafletMap);
 
-  route.forEach((p, i) => {
+  // Oltre una certa quantità, disegnare un marker numerato per ogni singolo
+  // punto rallenta il browser senza aggiungere leggibilità reale (i numeri
+  // si sovrappongono comunque). Sopra la soglia si mostrano solo inizio e fine.
+  const MAX_LABELED_MARKERS = 150;
+  const showAllMarkers = route.length <= MAX_LABELED_MARKERS;
+  const toShow = showAllMarkers ? route.map((p,i)=>[p,i]) : [[route[0],0],[route[route.length-1],route.length-1]];
+
+  toShow.forEach(([p, i]) => {
     const color = i===0 ? '#f2a65a' : (i===route.length-1 ? '#e4636f' : '#4fd1a5');
     L.circleMarker([p.lat, p.lng], { radius:11, fillColor:color, color:'#1a1f27', weight:2, fillOpacity:1 })
       .bindTooltip(String(i+1), { permanent:true, direction:'center', className:'marker-label' })

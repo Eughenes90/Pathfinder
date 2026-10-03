@@ -35,6 +35,40 @@ lo stato "Calcolo in corso…") prima di eseguire il lavoro sincrono — utile
 sui dataset più grandi dove il calcolo può richiedere qualche centinaio di
 millisecondi.
 
+## Migliorie aggiunte di recente
+
+- **Massimo portali per percorso** (default 40) **e tempo massimo totale**
+  (default 120 minuti, 0 = nessun limite): un cluster viene diviso in più
+  percorsi consecutivi (sovrapposti di un punto, per continuità) non appena
+  supera il primo dei due limiti. Il numero da solo può ingannare — 40
+  portali possono volerci 10 minuti in una zona densa o 3 ore in una rada —
+  per questo contano entrambi i vincoli, non solo il conteggio.
+- **Rifinitura 2-opt**: dopo l'ordinamento nearest-neighbor, un passaggio
+  2-opt (budget 200 ms per cluster) scambia coppie di tratti se accorciano il
+  percorso totale, eliminando i "salti indietro" evitabili.
+- **Export GPX**: oltre ai link Google Maps, un pulsante scarica il percorso
+  selezionato in formato GPX (sia come `<rte>` che `<trk>`, per compatibilità
+  con più app). Un avviso compare solo se il percorso supera 500 punti —
+  limite pratico di alcuni dispositivi GPS più datati — cosa che con il tetto
+  sopra impostato a default non succede quasi mai.
+- **Parametri ricordati**: tempo massimo, velocità, fattore di correzione,
+  minimo e massimo portali vengono salvati in un cookie di questo browser
+  (nessun dato sensibile, nessun server coinvolto) e ripristinati alla
+  riapertura. Link "Ripristina valori di default" per tornare ai valori
+  originali.
+- **Limite sui marker disegnati**: sopra 150 punti, la mappa mostra solo
+  inizio e fine invece di un marker numerato per ogni tappa — evita di
+  bloccare il browser su percorsi molto grandi (meno rilevante ora che
+  c'è il tetto sopra, ma resta come protezione).
+- **Fix: coda troppo piccola dopo uno split.** Dividere un cluster per
+  conteggio/tempo massimo può lasciare un'ultima parte più piccola del
+  "Minimo portali per percorso" impostato. Ora viene fusa nella parte
+  precedente invece di restare un percorso sotto il minimo scelto.
+- **Fix: nessun controllo se minimo > massimo.** Se "Minimo portali" supera
+  "Massimo portali" i due parametri si contraddicono — il calcolo ora si
+  ferma con un messaggio chiaro invece di procedere con un risultato
+  inconsistente.
+
 ## Un limite da conoscere: l'effetto catena
 
 Il clustering per componenti connesse (A vicino a B, B vicino a C → A, B, C
